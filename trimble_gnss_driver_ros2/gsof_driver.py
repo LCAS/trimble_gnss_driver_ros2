@@ -236,7 +236,7 @@ class GSOFDriver(Node):
         current_time = self.get_clock().now() # Replace with GPS time?
         fix = NavSatFix()
 
-        fix.header.stamp = current_time
+        fix.header.stamp = current_time.to_msg()
         fix.header.frame_id = self.output_frame_id
         gps_qual = self.get_gps_quality()
         fix.status.service = NavSatStatus.SERVICE_GPS # TODO: Fill correctly

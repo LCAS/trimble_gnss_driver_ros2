@@ -28,8 +28,8 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
 
-    rtk_ip = LaunchConfiguration('rtk_ip', default='0.0.0.0')
-    rtk_port = LaunchConfiguration('rtk_port', default='28001')
+    rtk_ip = LaunchConfiguration('rtk_ip', default='192.168.0.50')
+    rtk_port = LaunchConfiguration('rtk_port', default='28009')
     prefix = LaunchConfiguration('prefix', default='gps_base')
     output_frame_id = LaunchConfiguration('output_frame_id', default='gps_base_link')
     apply_dual_antenna_offset = LaunchConfiguration('apply_dual_antenna_offset', default='False')
