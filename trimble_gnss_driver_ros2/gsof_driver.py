@@ -143,25 +143,27 @@ class GSOFDriver(Node):
                 # print("Base Info: \n", self.rec_dict['BASE_NAME_1'], self.rec_dict['BASE_ID_1'], self.rec_dict['BASE_LATITUDE'], self.rec_dict['BASE_LONGITUDE'], self.rec_dict['BASE_HEIGHT'])
             # if INS_FULL_NAV in self.records and LAT_LON_H in self.records:
             #     print("Altitude INS: ", self.rec_dict['FUSED_ALTITUDE'], "Height LLH (WGS84): ", self.rec_dict['HEIGHT_WGS84'])
+                    
+    def quaternion_from_euler(self, roll, pitch, yaw):
+        """
+        Converts euler roll, pitch, yaw to quaternion (w in last place)
+        quat = [w, x, y, z]
+        """
+        cy = math.cos(yaw * 0.5)
+        sy = math.sin(yaw * 0.5)
+        cp = math.cos(pitch * 0.5)
+        sp = math.sin(pitch * 0.5)
+        cr = math.cos(roll * 0.5)
+        sr = math.sin(roll * 0.5)
 
-    def euler_from_quaternion(quaternion):
-        x = quaternion.x
-        y = quaternion.y
-        z = quaternion.z
-        w = quaternion.w
+        q = [0] * 4
+        q[0] = cy * cp * cr + sy * sp * sr
+        q[1] = cy * cp * sr - sy * sp * cr
+        q[2] = sy * cp * sr + cy * sp * cr
+        q[3] = sy * cp * cr - cy * sp * sr
 
-        sin_roll_cos_pitch = 2 * (w * x + y * z)
-        cos_roll_cos_pitch = 1 - 2 * (x * x + y * y)
-        roll = atan2(sin_roll_cos_pitch, cos_roll_cos_pitch)
+        return q
 
-        sin_pitch = 2 * (w * y - z * x)
-        pitch = asin(sin_pitch)
-
-        sin_yaw_cos_pitch = 2 * (w * z + x * y)
-        cos_yaw_cos_pitch = 1 - 2 * (y * y + z * z)
-        yaw = atan2(sin_yaw_cos_pitch, cos_yaw_cos_pitch)
-        return roll, pitch, yaw
-    
     def send_ins_fix(self):
         if self.rec_dict['FUSED_LATITUDE'] == 0 and self.rec_dict['FUSED_LONGITUDE']  == 0 and self.rec_dict['FUSED_ALTITUDE'] == 0:
             self.get_logger().warn("Invalid fix, skipping")
@@ -210,16 +212,16 @@ class GSOFDriver(Node):
         # print "current time: ", current_time, "INS time: ", self.ins_rms_ts
         attitude = Imu()
 
-        attitude.header.stamp = current_time
+        attitude.header.stamp = current_time.to_msg()
         attitude.header.frame_id = self.output_frame_id  # Assume transformation handled by receiver
 
         heading_enu = 2*math.pi - self.normalize_angle(math.radians(self.rec_dict['FUSED_YAW']) + 3*math.pi/2)
-        orientation_quat = self.quaternion_from_euler(math.radians(self.rec_dict['FUSED_ROLL']),     #  roll sign stays the same
+        orie_quat = self.quaternion_from_euler(math.radians(self.rec_dict['FUSED_ROLL']),     #  roll sign stays the same
                                              - math.radians(self.rec_dict['FUSED_PITCH']),  # -ve for robots coord system (+ve down)
                                              heading_enu)
         # print 'r p y_enu receiver_heading [degs]: ', self.rec_dict['FUSED_ROLL'], self.rec_dict['FUSED_PITCH'], math.degrees(heading_enu), self.rec_dict['FUSED_YAW']
 
-        attitude.orientation = Quaternion(*orientation_quat)
+        attitude.orientation = Quaternion(x=orie_quat[1], y=orie_quat[2], z=orie_quat[3], w=orie_quat[0])
 
         attitude.orientation_covariance[0] = math.radians(self.rec_dict['FUSED_RMS_ROLL']) ** 2  # [36] size array
         attitude.orientation_covariance[4] = math.radians(self.rec_dict['FUSED_RMS_PITCH']) ** 2  # [36] size array
@@ -258,6 +260,27 @@ class GSOFDriver(Node):
 
         self.fix_pub.publish(fix)
 
+    def quaternion_from_euler(self, roll, pitch, yaw):
+        """
+        Converts euler roll, pitch, yaw to quaternion (w in last place)
+        quat = [x, y, z, w]
+        Bellow should be replaced when porting for ROS 2 Python tf_conversions is done.
+        """
+        cy = math.cos(yaw * 0.5)
+        sy = math.sin(yaw * 0.5)
+        cp = math.cos(pitch * 0.5)
+        sp = math.sin(pitch * 0.5)
+        cr = math.cos(roll * 0.5)
+        sr = math.sin(roll * 0.5)
+
+        q = [0] * 4
+        q[0] = cy * cp * cr + sy * sp * sr
+        q[1] = cy * cp * sr - sy * sp * cr
+        q[2] = sy * cp * sr + cy * sp * cr
+        q[3] = sy * cp * cr - cy * sp * sr
+
+        return q
+
 
     def send_yaw(self):
         """
@@ -273,18 +296,18 @@ class GSOFDriver(Node):
         # print "current time: ", current_time, "INS time: ", self.ins_rms_ts
         yaw = Imu()
 
-        yaw.header.stamp = current_time
+        yaw.header.stamp = current_time.to_msg()
         yaw.header.frame_id = self.output_frame_id  # Assume transformation handled by receiver
 
         heading_ned = self.normalize_angle(self.rec_dict['YAW'] + self.heading_offset)
         heading_enu = 2*math.pi - self.normalize_angle(heading_ned + 3*math.pi/2)
 
-        orientation_quat = self.quaternion_from_euler(self.rec_dict['ROLL'],     #  roll sign stays the same
+        orie_quat = self.quaternion_from_euler(self.rec_dict['ROLL'],     #  roll sign stays the same
                                              - self.rec_dict['PITCH'],  # -ve for robots coord system (+ve down)
                                              heading_enu)
         # print 'r p y receiver_heading [rads]: ', self.rec_dict['ROLL'], self.rec_dict['PITCH'], heading_enu, self.rec_dict['YAW']
 
-        yaw.orientation = Quaternion(*orientation_quat)
+        yaw.orientation = Quaternion(x=orie_quat[1], y=orie_quat[2], z=orie_quat[3], w=orie_quat[0])
 
         yaw.orientation_covariance[0] = self.rec_dict['ROLL_VAR']  # [9]
         yaw.orientation_covariance[4] = self.rec_dict['PITCH_VAR']  # [9]
