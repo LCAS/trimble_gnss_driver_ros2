@@ -35,8 +35,11 @@ def generate_launch_description():
     apply_dual_antenna_offset = LaunchConfiguration('apply_dual_antenna_offset', default='False')
     gps_main_frame_id = LaunchConfiguration('gps_main_frame_id', default='gps_base_link')
     gps_aux_frame_id = LaunchConfiguration('gps_aux_frame_id', default='gps_aux')
-  
+    use_sim_time = LaunchConfiguration('use_sim_time', default='False')
+
     return LaunchDescription([
+        DeclareLaunchArgument(
+            'use_sim_time', default_value=use_sim_time, description='Use simulation (Gazebo) clock if true'),
         DeclareLaunchArgument(
             'rtk_ip', default_value=rtk_ip, description='IP address of RTK'),
         DeclareLaunchArgument(
@@ -64,7 +67,8 @@ def generate_launch_description():
                 'output_frame_id':output_frame_id,
                 'apply_dual_antenna_offset':apply_dual_antenna_offset,
                 'gps_main_frame_id': gps_main_frame_id,
-                'gps_aux_frame_id': gps_aux_frame_id
+                'gps_aux_frame_id': gps_aux_frame_id,
+                'use_sim_time': use_sim_time
             }],
             remappings=[("/fix", "/gps_base/fix"), ("/yaw", "/gps_base/yaw"),
                         ("/attitude", "/gps_base/attitude")],
