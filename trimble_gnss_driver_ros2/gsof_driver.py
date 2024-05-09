@@ -72,6 +72,9 @@ class GSOFDriver(Node):
         self.output_frame_id = self.get_parameter_or("output_frame_id", Parameter('str', Parameter.Type.STRING, "gps_base_link")).value
         self.apply_dual_antenna_offset = self.get_parameter_or("apply_dual_antenna_offset", Parameter('bool', Parameter.Type.BOOL, False)).value
         self.prefix = self.get_parameter_or("prefix", Parameter('str', Parameter.Type.STRING, "gps")).value
+        
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
 
         if self.apply_dual_antenna_offset:
             self.gps_main_frame_id = self.get_parameter_or("gps_main_frame_id", Parameter('str', Parameter.Type.STRING, "gps_link")).value
@@ -105,8 +108,7 @@ class GSOFDriver(Node):
         self.error_info_timeout = 1.0
         self.base_info_timeout = 5.0
         
-        self.tf_buffer = Buffer()
-        self.tf_listener = TransformListener(self.tf_buffer, self)
+       
 
         while rclpy.ok():
             # READ GSOF STREAM
