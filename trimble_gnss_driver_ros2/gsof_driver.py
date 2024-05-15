@@ -8,22 +8,26 @@ It  has been adapted from https://kb.unavco.org/kb/article/trimble-netr9-receive
 """
 
 from struct import unpack
+import rclpy.duration
+import rclpy.time
 from trimble_gnss_driver_ros2.scripts.parser import parse_maps
 from trimble_gnss_driver_ros2.scripts.gps_qualities import gps_qualities
 import socket
 import sys
 import math
 import rclpy
-from math import asin
-from math import atan2
-from math import cos
-from math import sin
+import math
 
 from geometry_msgs.msg import Quaternion
 from sensor_msgs.msg import NavSatFix, NavSatStatus, Imu # For lat lon h
 
+"""
+tf2_ros API: https://docs.ros.org/en/kinetic/api/tf2_ros/html/python/
+"""
 from tf2_ros import TransformException
+from tf2_ros import BufferInterface
 from tf2_ros.buffer import Buffer
+from tf2_ros.buffer_client import BufferClient
 from tf2_ros.transform_listener import TransformListener
 
 from rclpy.node import Node
@@ -51,7 +55,6 @@ LOCAL_DATUM = 4
 LOCAL_ENU= 5
 
 
-
 class GSOFDriver(Node):
     """ A class to parse GSOF messages from a TCP stream. """
 
@@ -59,31 +62,40 @@ class GSOFDriver(Node):
 
         super().__init__('gsof_driver') 
 
-        self.declare_parameter('rtk_port', rclpy.Parameter.Type.INTEGER) 
-        self.declare_parameter('rtk_ip', rclpy.Parameter.Type.STRING) 
-        self.declare_parameter('output_frame_id', rclpy.Parameter.Type.STRING) 
-        self.declare_parameter('apply_dual_antenna_offset', rclpy.Parameter.Type.BOOL) 
-        self.declare_parameter('gps_main_frame_id', rclpy.Parameter.Type.STRING) 
-        self.declare_parameter('gps_aux_frame_id', rclpy.Parameter.Type.STRING) 
-        self.declare_parameter("prefix", rclpy.Parameter.Type.STRING)
+        self.declare_parameter('rtk_port'                   , rclpy.Parameter.Type.INTEGER) 
+        self.declare_parameter('rtk_ip'                     , rclpy.Parameter.Type.STRING) 
+        self.declare_parameter('output_frame_id'            , rclpy.Parameter.Type.STRING) 
+        self.declare_parameter('apply_dual_antenna_offset'  , rclpy.Parameter.Type.BOOL) 
+        self.declare_parameter('gps_main_frame_id'          , rclpy.Parameter.Type.STRING) 
+        self.declare_parameter('gps_aux_frame_id'           , rclpy.Parameter.Type.STRING) 
+        self.declare_parameter('gps_main_frame_xyz'         , rclpy.Parameter.Type.DOUBLE_ARRAY) 
+        self.declare_parameter('gps_aux_frame_xyz'          , rclpy.Parameter.Type.DOUBLE_ARRAY) 
+        self.declare_parameter("prefix"                     , rclpy.Parameter.Type.STRING)
        
         self.rtk_port = self.get_parameter_or("rtk_port", Parameter('int', Parameter.Type.INTEGER, 21098)).value
         self.rtk_ip = self.get_parameter_or("rtk_ip", Parameter('str', Parameter.Type.STRING, "192.168.0.50")).value 
-        self.output_frame_id = self.get_parameter_or("output_frame_id", Parameter('str', Parameter.Type.STRING, "gps_base_link")).value
+        self.output_frame_id = self.get_parameter_or("output_frame_id", Parameter('str', Parameter.Type.STRING, "base_link")).value
         self.apply_dual_antenna_offset = self.get_parameter_or("apply_dual_antenna_offset", Parameter('bool', Parameter.Type.BOOL, False)).value
         self.prefix = self.get_parameter_or("prefix", Parameter('str', Parameter.Type.STRING, "gps")).value
+        self.gps_main_frame_id = self.get_parameter_or("gps_main_frame_id", Parameter('str', Parameter.Type.STRING, "back_antenna_link")).value
+        self.gps_aux_frame_id = self.get_parameter_or("gps_aux_frame_id", Parameter('str', Parameter.Type.STRING, "front_antenna_link")).value
+        self.gps_main_frame_xyz = self.get_parameter_or("gps_main_frame_xyz", Parameter('array', Parameter.Type.DOUBLE_ARRAY, [-1.2, 0.15, 1.5] )).value
+        self.gps_aux_frame_xyz = self.get_parameter_or("gps_aux_frame_xyz", Parameter('array', Parameter.Type.DOUBLE_ARRAY,   [ 1.2,-0.15, 1.5])).value
         
-        self.tf_buffer = Buffer()
+        self.heading_offset = 0.0
+
+        duration = rclpy.duration.Duration(seconds=10)
+        self.tf_buffer = Buffer(cache_time=duration, node=self)
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
         if self.apply_dual_antenna_offset:
-            self.gps_main_frame_id = self.get_parameter_or("gps_main_frame_id", Parameter('str', Parameter.Type.STRING, "gps_link")).value
-            self.gps_aux_frame_id = self.get_parameter_or("gps_aux_frame_id", Parameter('str', Parameter.Type.STRING, "gps_link")).value
-            self.heading_offset = self.get_heading_offset(self.gps_main_frame_id, self.gps_aux_frame_id)
-        else:
-            self.heading_offset = 0.0
-            
+            # self.heading_offset = self.get_heading_offset(self.gps_main_frame_id, self.gps_aux_frame_id)
+            dx_antennas = self.gps_main_frame_xyz[0] - self.gps_aux_frame_xyz[0]
+            dy_antennas = self.gps_main_frame_xyz[1] - self.gps_aux_frame_xyz[1]
+            self.heading_offset = math.atan2(dy_antennas, dx_antennas)
+
         self.get_logger().info("Heading offset is {}".format(self.heading_offset) )
+
         self.fix_pub = self.create_publisher(NavSatFix, "/fix", 1)
         # For attitude, use IMU msg to keep compatible with robot_localization
         # But note that this is not only from an IMU
@@ -109,7 +121,6 @@ class GSOFDriver(Node):
         self.base_info_timeout = 5.0
         
        
-
         while rclpy.ok():
             # READ GSOF STREAM
             self.records = []
@@ -349,14 +360,15 @@ class GSOFDriver(Node):
             self.get_logger().error("Cannot offset antenna yaw if they have the same frame_id's, will assume 0.0")
             return 0.0
 
-        #        Get GPS antenna tf
+        # Get GPS antenna tf
         # tf_listener = tf.TransformListener()
+        duration = rclpy.duration.Duration(seconds=1)
         self.get_logger().info( "Waiting for GPS tf between antennas.")
         got_gps_tf = False
         while not got_gps_tf:
             try:
                 # (trans, rot) = tf_listener.lookupTransform(gps_main_frame_id, gps_aux_frame_id, rospy.Time(0))
-                t = self.tf_buffer.lookup_transform(gps_main_frame_id, gps_aux_frame_id, rclpy.time.Time())
+                t = self.tf_buffer.lookup_transform(gps_main_frame_id, gps_aux_frame_id, rclpy.time.Time(), timeout=duration)
                 got_gps_tf = True
             except TransformException as ex:
                 self.get_logger().info('Could not transform {} to {}: {}'.format(gps_main_frame_id, gps_aux_frame_id, ex))
