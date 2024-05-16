@@ -68,8 +68,7 @@ class GSOFDriver(Node):
         self.declare_parameter('apply_dual_antenna_offset'  , rclpy.Parameter.Type.BOOL) 
         self.declare_parameter('gps_main_frame_id'          , rclpy.Parameter.Type.STRING) 
         self.declare_parameter('gps_aux_frame_id'           , rclpy.Parameter.Type.STRING) 
-        self.declare_parameter('gps_main_frame_xyz'         , rclpy.Parameter.Type.DOUBLE_ARRAY) 
-        self.declare_parameter('gps_aux_frame_xyz'          , rclpy.Parameter.Type.DOUBLE_ARRAY) 
+        self.declare_parameter('heading_offset'             , rclpy.Parameter.Type.DOUBLE) 
         self.declare_parameter("prefix"                     , rclpy.Parameter.Type.STRING)
        
         self.rtk_port = self.get_parameter_or("rtk_port", Parameter('int', Parameter.Type.INTEGER, 21098)).value
@@ -79,20 +78,10 @@ class GSOFDriver(Node):
         self.prefix = self.get_parameter_or("prefix", Parameter('str', Parameter.Type.STRING, "gps")).value
         self.gps_main_frame_id = self.get_parameter_or("gps_main_frame_id", Parameter('str', Parameter.Type.STRING, "back_antenna_link")).value
         self.gps_aux_frame_id = self.get_parameter_or("gps_aux_frame_id", Parameter('str', Parameter.Type.STRING, "front_antenna_link")).value
-        self.gps_main_frame_xyz = self.get_parameter_or("gps_main_frame_xyz", Parameter('array', Parameter.Type.DOUBLE_ARRAY, [-1.2, 0.15, 1.5] )).value
-        self.gps_aux_frame_xyz = self.get_parameter_or("gps_aux_frame_xyz", Parameter('array', Parameter.Type.DOUBLE_ARRAY,   [ 1.2,-0.15, 1.5])).value
+        self.heading_offset = self.get_parameter_or("heading_offset", Parameter('double', Parameter.Type.DOUBLE, 0.0 )).value
         
-        self.heading_offset = 0.0
-
-        duration = rclpy.duration.Duration(seconds=10)
-        self.tf_buffer = Buffer(cache_time=duration, node=self)
-        self.tf_listener = TransformListener(self.tf_buffer, self)
-
-        if self.apply_dual_antenna_offset:
-            # self.heading_offset = self.get_heading_offset(self.gps_main_frame_id, self.gps_aux_frame_id)
-            dx_antennas = self.gps_main_frame_xyz[0] - self.gps_aux_frame_xyz[0]
-            dy_antennas = self.gps_main_frame_xyz[1] - self.gps_aux_frame_xyz[1]
-            self.heading_offset = math.atan2(dy_antennas, dx_antennas)
+        if self.apply_dual_antenna_offset == False:
+            self.heading_offset = 0
 
         self.get_logger().info("Heading offset is {}".format(self.heading_offset) )
 
@@ -353,36 +342,6 @@ class GSOFDriver(Node):
         while angle_in < 0:
             angle_in = angle_in + 2*math.pi
         return angle_in
-
-
-    def get_heading_offset(self, gps_main_frame_id, gps_aux_frame_id):
-        if gps_main_frame_id == gps_aux_frame_id:
-            self.get_logger().error("Cannot offset antenna yaw if they have the same frame_id's, will assume 0.0")
-            return 0.0
-
-        # Get GPS antenna tf
-        # tf_listener = tf.TransformListener()
-        duration = rclpy.duration.Duration(seconds=1)
-        self.get_logger().info( "Waiting for GPS tf between antennas.")
-        got_gps_tf = False
-        while not got_gps_tf:
-            try:
-                # (trans, rot) = tf_listener.lookupTransform(gps_main_frame_id, gps_aux_frame_id, rospy.Time(0))
-                t = self.tf_buffer.lookup_transform(gps_main_frame_id, gps_aux_frame_id, rclpy.time.Time(), timeout=duration)
-                got_gps_tf = True
-            except TransformException as ex:
-                self.get_logger().info('Could not transform {} to {}: {}'.format(gps_main_frame_id, gps_aux_frame_id, ex))
-                got_gps_tf = False
-                continue
-        self.get_logger().info( "Got gps tf")
-        dy_antennas = t.transform.translation.y
-        dx_antennas = t.transform.translation.x
-        if got_gps_tf:
-            heading_offset = math.atan2(dy_antennas, dx_antennas)
-        else:
-            heading_offset = 0
-        return heading_offset
-
 
     def setup_connection(self, _ip, _port):
         self.rtk_port = _port
