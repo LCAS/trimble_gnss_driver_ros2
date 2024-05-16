@@ -33,8 +33,9 @@ def generate_launch_description():
     prefix = LaunchConfiguration('prefix', default='gps_base')
     output_frame_id = LaunchConfiguration('output_frame_id', default='gps_base_link')
     apply_dual_antenna_offset = LaunchConfiguration('apply_dual_antenna_offset', default='False')
-    gps_main_frame_id = LaunchConfiguration('gps_main_frame_id', default='gps_base_link')
-    gps_aux_frame_id = LaunchConfiguration('gps_aux_frame_id', default='gps_aux')
+    heading_offset = LaunchConfiguration('heading_offset', default='0.0')
+    gps_main_frame_id = LaunchConfiguration('gps_main_frame_id', default='back_antenna_link')
+    gps_aux_frame_id = LaunchConfiguration('gps_aux_frame_id', default='front_antenna_link')
     use_sim_time = LaunchConfiguration('use_sim_time', default='False')
 
     return LaunchDescription([
@@ -52,6 +53,9 @@ def generate_launch_description():
             'apply_dual_antenna_offset', default_value=apply_dual_antenna_offset,
             description='Apply dual antenna offset'),
         DeclareLaunchArgument(
+            'heading_offset', default_value=heading_offset,
+            description='GPS antennas headding correction offset in radians w.r.t the main antenna'),
+        DeclareLaunchArgument(
             'gps_main_frame_id', default_value=gps_main_frame_id, description='GPS main frame id'),
         DeclareLaunchArgument(
             'gps_aux_frame_id', default_value=gps_aux_frame_id,
@@ -68,7 +72,8 @@ def generate_launch_description():
                 'apply_dual_antenna_offset':apply_dual_antenna_offset,
                 'gps_main_frame_id': gps_main_frame_id,
                 'gps_aux_frame_id': gps_aux_frame_id,
-                'use_sim_time': use_sim_time
+                'use_sim_time': use_sim_time,
+                'heading_offset': heading_offset
             }],
             remappings=[("/fix", "/gps_base/fix"), ("/yaw", "/gps_base/yaw"),
                         ("/attitude", "/gps_base/attitude")],
