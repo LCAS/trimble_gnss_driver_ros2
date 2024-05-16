@@ -17,10 +17,10 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='Geesara',
-    maintainer_email='ggeesara@gmail.com',
+    maintainer='Geesara, Ibrahim',
+    maintainer_email='ggeesara@gmail.com, ibrahim.hroub7@gmail.com',
     description='The ros2 trimble_gnss_driver_ros2 package',
-    license='MIT',
+    license='Apache-2.0 license',
     tests_require=['pytest', 'launch-pytest'],
     entry_points={
         'console_scripts': [
@@ -29,7 +29,3 @@ setup(
     },
 
 )
-
-
-
-
