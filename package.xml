@@ -2,9 +2,11 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>trimble_gnss_driver_ros2</name>
-  <version>3.0.5</version>
-  <description>The ros2 trimble_gnss_driver_ros2 package</description>
+  <version>3.1.5</version>
+  <description>Trimble RTK-GNSS driver package for ROS2</description>
   <maintainer email="ggeesara@gmail.com">Geesara</maintainer>
+  <maintainer email="ibrahim.hroub7@gmail.com">Ibrahim</maintainer>
+
   <author email="ggeesara@gmail.com">Geesara</author>
  
   <license>Apache License 2.0</license>
@@ -13,7 +15,6 @@
 
   <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
-  <depend>nav_msgs</depend>
   <depend>tf2_ros</depend>
   
   <export>
