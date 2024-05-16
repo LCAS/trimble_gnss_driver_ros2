@@ -31,7 +31,7 @@ def generate_launch_description():
     rtk_ip = LaunchConfiguration('rtk_ip', default='192.168.0.50')
     rtk_port = LaunchConfiguration('rtk_port', default='28009')
     prefix = LaunchConfiguration('prefix', default='gps_base')
-    output_frame_id = LaunchConfiguration('output_frame_id', default='base_link')
+    output_frame_id = LaunchConfiguration('output_frame_id', default='gps_base_link')
     apply_dual_antenna_offset = LaunchConfiguration('apply_dual_antenna_offset', default='False')
     heading_offset = LaunchConfiguration('heading_offset', default='0.0')
     gps_main_frame_id = LaunchConfiguration('gps_main_frame_id', default='back_antenna_link')
