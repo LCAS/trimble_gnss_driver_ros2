@@ -12,6 +12,7 @@ import rclpy.duration
 import rclpy.time
 from trimble_gnss_driver_ros2.scripts.parser import parse_maps
 from trimble_gnss_driver_ros2.scripts.gps_qualities import gps_qualities
+from rclpy.qos import QoSProfile, HistoryPolicy, ReliabilityPolicy, DurabilityPolicy, QoSDurabilityPolicy
 import socket
 import sys
 import math
@@ -85,15 +86,16 @@ class GSOFDriver(Node):
 
         self.get_logger().info("Heading offset is {}".format(self.heading_offset) )
 
-        self.fix_pub = self.create_publisher(NavSatFix, "/fix", 1)
+        self.latching_qos = QoSProfile(depth=1, durability=DurabilityPolicy.VOLATILE, reliability=ReliabilityPolicy.BEST_EFFORT)
+        self.fix_pub = self.create_publisher(NavSatFix, "/fix", qos_profile=self.latching_qos)
         # For attitude, use IMU msg to keep compatible with robot_localization
         # But note that this is not only from an IMU
-        self.attitude_pub = self.create_publisher(Imu,  "/attitude", 1)
+        self.attitude_pub = self.create_publisher(Imu,  "/attitude", qos_profile=self.latching_qos)
         # yaw from the dual antennas fills an Imu msg simply to keep consistent
         # with the current setup
         # Keep separate from attitude to avoid accidentally fusing zeros when
         # we don't measure roll/pitch
-        self.yaw_pub = self.create_publisher(Imu, '/yaw', 1)
+        self.yaw_pub = self.create_publisher(Imu, '/yaw', qos_profile=self.latching_qos)
 
         self.client = self.setup_connection(self.rtk_ip , self.rtk_port)
 
