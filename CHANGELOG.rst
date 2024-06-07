@@ -2,8 +2,8 @@
 Changelog for package trimble_gnss_driver_ros2
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.0.1 (2024-06-07)
+------------------
 * change QOS
 * Merge pull request `#5 <https://github.com/LCAS/trimble_gnss_driver_ros2/issues/5>`_ from ibrahimhroob/patch-1
   Update ros-ci.yml
