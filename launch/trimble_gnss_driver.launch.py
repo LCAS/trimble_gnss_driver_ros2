@@ -6,29 +6,17 @@
 # @date:
 # ----------------------------------
 
-import os
-from os.path import join
-
-from ament_index_python.packages import get_package_share_directory
-
 from launch_ros.actions import Node
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, GroupAction
-from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node, SetParameter
-from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.actions import IncludeLaunchDescription
-from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
 def generate_launch_description():
 
-    rtk_ip = LaunchConfiguration('rtk_ip', default='192.168.0.50')
+    rtk_ip = LaunchConfiguration('rtk_ip', default='192.168.5.50')
     rtk_port = LaunchConfiguration('rtk_port', default='28009')
     prefix = LaunchConfiguration('prefix', default='gps_base')
     output_frame_id = LaunchConfiguration('output_frame_id', default='gps_base_link')
@@ -37,6 +25,8 @@ def generate_launch_description():
     gps_main_frame_id = LaunchConfiguration('gps_main_frame_id', default='back_antenna_link')
     gps_aux_frame_id = LaunchConfiguration('gps_aux_frame_id', default='front_antenna_link')
     use_sim_time = LaunchConfiguration('use_sim_time', default='False')
+    covariance_threshold = LaunchConfiguration('covariance_threshold', default='0.2')
+    permit_high_covariance_data = LaunchConfiguration('permit_high_covariance_data', default='True')
 
     return LaunchDescription([
         DeclareLaunchArgument(
@@ -56,6 +46,12 @@ def generate_launch_description():
             'heading_offset', default_value=heading_offset,
             description='GPS antennas headding correction offset in radians w.r.t the main antenna'),
         DeclareLaunchArgument(
+            'covariance_threshold', default_value=covariance_threshold,
+            description='This is the variance threshold of the position'),
+        DeclareLaunchArgument(
+            'permit_high_covariance_data', default_value=permit_high_covariance_data,
+            description='Allow publishing even if the covariance get out of bound'),
+        DeclareLaunchArgument(
             'gps_main_frame_id', default_value=gps_main_frame_id, description='GPS main frame id'),
         DeclareLaunchArgument(
             'gps_aux_frame_id', default_value=gps_aux_frame_id,
@@ -73,7 +69,9 @@ def generate_launch_description():
                 'gps_main_frame_id': gps_main_frame_id,
                 'gps_aux_frame_id': gps_aux_frame_id,
                 'use_sim_time': use_sim_time,
-                'heading_offset': heading_offset
+                'heading_offset': heading_offset,
+                'covariance_threshold': covariance_threshold,
+                'permit_high_covariance_data': permit_high_covariance_data,
             }],
             remappings=[("/fix", "/gps_base/fix"), ("/yaw", "/gps_base/yaw"),
                         ("/attitude", "/gps_base/attitude")],
