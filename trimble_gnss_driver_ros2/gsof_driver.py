@@ -283,6 +283,18 @@ class GSOFDriver(Node):
         fix.position_covariance[4] = self.rec_dict['SIG_NORT'] ** 2
         fix.position_covariance[8] = self.rec_dict['SIG_UP'] ** 2
 
+        # Check position covariances
+        cov_lat = fix.position_covariance[0]
+        cov_lon = fix.position_covariance[4]
+        cov_alt = fix.position_covariance[8]
+
+        cov_thr = self.covariance_threshold
+
+        # If covariance exceeds 0.2 and permit_high_covariance_data is False, do not publish
+        if (cov_lat > cov_thr or cov_lon > cov_thr or cov_alt > cov_thr) and not self.permit_high_covariance_data:
+            self.get_logger().warn("High covariance detected, skipping publication")
+            return
+        
         self.fix_pub.publish(fix)
 
     def quaternion_from_euler(self, roll, pitch, yaw):
