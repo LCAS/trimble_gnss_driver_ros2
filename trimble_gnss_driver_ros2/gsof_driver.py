@@ -71,7 +71,9 @@ class GSOFDriver(Node):
         self.declare_parameter('gps_aux_frame_id'           , rclpy.Parameter.Type.STRING) 
         self.declare_parameter('heading_offset'             , rclpy.Parameter.Type.DOUBLE) 
         self.declare_parameter("prefix"                     , rclpy.Parameter.Type.STRING)
-       
+        self.declare_parameter('covariance_threshold'       , rclpy.Parameter.Type.DOUBLE) 
+        self.declare_parameter('permit_high_covariance_data', rclpy.Parameter.Type.BOOL) 
+
         self.rtk_port = self.get_parameter_or("rtk_port", Parameter('int', Parameter.Type.INTEGER, 21098)).value
         self.rtk_ip = self.get_parameter_or("rtk_ip", Parameter('str', Parameter.Type.STRING, "192.168.0.50")).value 
         self.output_frame_id = self.get_parameter_or("output_frame_id", Parameter('str', Parameter.Type.STRING, "base_link")).value
@@ -80,6 +82,8 @@ class GSOFDriver(Node):
         self.gps_main_frame_id = self.get_parameter_or("gps_main_frame_id", Parameter('str', Parameter.Type.STRING, "back_antenna_link")).value
         self.gps_aux_frame_id = self.get_parameter_or("gps_aux_frame_id", Parameter('str', Parameter.Type.STRING, "front_antenna_link")).value
         self.heading_offset = self.get_parameter_or("heading_offset", Parameter('double', Parameter.Type.DOUBLE, 0.0 )).value
+        self.covariance_threshold = self.get_parameter_or("covariance_threshold", Parameter('double', Parameter.Type.DOUBLE, 0.2 )).value
+        self.permit_high_covariance_data = self.get_parameter_or("permit_high_covariance_data", Parameter('bool', Parameter.Type.BOOL, True )).value
         
         if self.apply_dual_antenna_offset == False:
             self.heading_offset = 0
@@ -169,17 +173,32 @@ class GSOFDriver(Node):
         return q
 
     def send_ins_fix(self):
-        if self.rec_dict['FUSED_LATITUDE'] == 0 and self.rec_dict['FUSED_LONGITUDE']  == 0 and self.rec_dict['FUSED_ALTITUDE'] == 0:
+        # Check if the coordinates are invalid (latitude, longitude, altitude == 0)
+        if self.rec_dict['FUSED_LATITUDE'] == 0 and self.rec_dict['FUSED_LONGITUDE'] == 0 and self.rec_dict['FUSED_ALTITUDE'] == 0:
             self.get_logger().warn("Invalid fix, skipping")
             return
-        current_time = self.get_clock().now() # Replace with GPS time?
+
+        # Check position covariances
+        cov_lat = self.rec_dict['FUSED_RMS_LATITUDE'] ** 2
+        cov_lon = self.rec_dict['FUSED_RMS_LONGITUDE'] ** 2
+        cov_alt = self.rec_dict['FUSED_RMS_ALTITUDE'] ** 2
+
+        cov_thr = self.covariance_threshold
+
+        # If covariance exceeds 0.2 and permit_high_covariance_data is False, do not publish
+        if (cov_lat > cov_thr or cov_lon > cov_thr or cov_alt > cov_thr) and not self.permit_high_covariance_data:
+            self.get_logger().warn("High covariance detected, skipping publication")
+            return
+
+        # Create and publish the NavSatFix message
+        current_time = self.get_clock().now()  # Replace with GPS time if needed
         fix = NavSatFix()
 
         fix.header.stamp = current_time.to_msg()
         fix.header.frame_id = self.output_frame_id
 
         gps_qual = gps_qualities[self.rec_dict['GPS_QUALITY']]
-        fix.status.service = NavSatStatus.SERVICE_GPS # TODO: Fill correctly
+        fix.status.service = NavSatStatus.SERVICE_GPS  # Set service type
         fix.status.status = gps_qual[0]
         fix.position_covariance_type = gps_qual[1]
 
@@ -190,12 +209,14 @@ class GSOFDriver(Node):
         # Altitude [m]. Positive is above the WGS 84 ellipsoid
         # Ref - http://docs.ros.org/en/api/sensor_msgs/html/msg/NavSatFix.html
 
-        fix.altitude = self.rec_dict['FUSED_ALTITUDE']  # <-- CHECK
+        fix.altitude = self.rec_dict['FUSED_ALTITUDE'] # <-- CHECK
 
-        fix.position_covariance[0] = self.rec_dict['FUSED_RMS_LONGITUDE'] ** 2
-        fix.position_covariance[4] = self.rec_dict['FUSED_RMS_LATITUDE'] ** 2
-        fix.position_covariance[8] = self.rec_dict['FUSED_RMS_ALTITUDE'] ** 2
+        # Set position covariance (lat, lon, alt)
+        fix.position_covariance[0] = cov_lon  # Longitude covariance
+        fix.position_covariance[4] = cov_lat  # Latitude covariance
+        fix.position_covariance[8] = cov_alt  # Altitude covariance
 
+        # Publish the fix message
         self.fix_pub.publish(fix)
 
 
@@ -262,6 +283,18 @@ class GSOFDriver(Node):
         fix.position_covariance[4] = self.rec_dict['SIG_NORT'] ** 2
         fix.position_covariance[8] = self.rec_dict['SIG_UP'] ** 2
 
+        # Check position covariances
+        cov_lat = fix.position_covariance[0]
+        cov_lon = fix.position_covariance[4]
+        cov_alt = fix.position_covariance[8]
+
+        cov_thr = self.covariance_threshold
+
+        # If covariance exceeds 0.2 and permit_high_covariance_data is False, do not publish
+        if (cov_lat > cov_thr or cov_lon > cov_thr or cov_alt > cov_thr) and not self.permit_high_covariance_data:
+            self.get_logger().warn("High covariance detected, skipping publication")
+            return
+        
         self.fix_pub.publish(fix)
 
     def quaternion_from_euler(self, roll, pitch, yaw):
