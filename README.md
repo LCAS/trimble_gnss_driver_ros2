@@ -15,10 +15,6 @@ The following are the configuration parameters available for the Trimble GNSS Dr
   - **Description**: Port number for the RTK GNSS receiver.
   - **Default**: `28009`
 
-- **`prefix`**
-  - **Description**: Prefix used for naming the nodes.
-  - **Default**: `gps_base`
-
 - **`output_frame_id`**
   - **Description**: Frame ID for the output data.
   - **Default**: `gps_base_link`
@@ -31,14 +27,14 @@ The following are the configuration parameters available for the Trimble GNSS Dr
   - **Description**: Heading offset value.
   - **Default**: `0.0`
 
-- **`gps_main_frame_id`**
-  - **Description**: Frame ID for the main GPS antenna.
-  - **Default**: `back_antenna_link`
-
-- **`gps_aux_frame_id`**
-  - **Description**: Frame ID for the auxiliary GPS antenna.
-  - **Default**: `front_antenna_link`
-
 - **`use_sim_time`**
   - **Description**: Use simulation time.
   - **Default**: `False`
+
+- **`covariance_threshold`**
+  - **Description**: Variance threshold used to filter high-covariance fixes when high-covariance data is not permitted.
+  - **Default**: `0.2`
+
+- **`permit_high_covariance_data`**
+  - **Description**: Publish fixes even when position covariance exceeds `covariance_threshold`.
+  - **Default**: `True`
