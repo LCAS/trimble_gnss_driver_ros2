@@ -67,10 +67,7 @@ class GSOFDriver(Node):
         self.declare_parameter('rtk_ip'                     , rclpy.Parameter.Type.STRING) 
         self.declare_parameter('output_frame_id'            , rclpy.Parameter.Type.STRING) 
         self.declare_parameter('apply_dual_antenna_offset'  , rclpy.Parameter.Type.BOOL) 
-        self.declare_parameter('gps_main_frame_id'          , rclpy.Parameter.Type.STRING) 
-        self.declare_parameter('gps_aux_frame_id'           , rclpy.Parameter.Type.STRING) 
         self.declare_parameter('heading_offset'             , rclpy.Parameter.Type.DOUBLE) 
-        self.declare_parameter("prefix"                     , rclpy.Parameter.Type.STRING)
         self.declare_parameter('covariance_threshold'       , rclpy.Parameter.Type.DOUBLE) 
         self.declare_parameter('permit_high_covariance_data', rclpy.Parameter.Type.BOOL) 
 
@@ -78,9 +75,6 @@ class GSOFDriver(Node):
         self.rtk_ip = self.get_parameter_or("rtk_ip", Parameter('str', Parameter.Type.STRING, "192.168.0.50")).value 
         self.output_frame_id = self.get_parameter_or("output_frame_id", Parameter('str', Parameter.Type.STRING, "base_link")).value
         self.apply_dual_antenna_offset = self.get_parameter_or("apply_dual_antenna_offset", Parameter('bool', Parameter.Type.BOOL, False)).value
-        self.prefix = self.get_parameter_or("prefix", Parameter('str', Parameter.Type.STRING, "gps")).value
-        self.gps_main_frame_id = self.get_parameter_or("gps_main_frame_id", Parameter('str', Parameter.Type.STRING, "back_antenna_link")).value
-        self.gps_aux_frame_id = self.get_parameter_or("gps_aux_frame_id", Parameter('str', Parameter.Type.STRING, "front_antenna_link")).value
         self.heading_offset = self.get_parameter_or("heading_offset", Parameter('double', Parameter.Type.DOUBLE, 0.0 )).value
         self.covariance_threshold = self.get_parameter_or("covariance_threshold", Parameter('double', Parameter.Type.DOUBLE, 0.2 )).value
         self.permit_high_covariance_data = self.get_parameter_or("permit_high_covariance_data", Parameter('bool', Parameter.Type.BOOL, True )).value
@@ -90,7 +84,7 @@ class GSOFDriver(Node):
 
         self.get_logger().info("Heading offset is {}".format(self.heading_offset) )
 
-        self.latching_qos = QoSProfile(depth=1, durability=DurabilityPolicy.VOLATILE, reliability=ReliabilityPolicy.BEST_EFFORT)
+        self.latching_qos = QoSProfile(depth=10, durability=DurabilityPolicy.VOLATILE, reliability=ReliabilityPolicy.RELIABLE)
         self.fix_pub = self.create_publisher(NavSatFix, "/fix", qos_profile=self.latching_qos)
         # For attitude, use IMU msg to keep compatible with robot_localization
         # But note that this is not only from an IMU
