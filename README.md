@@ -38,3 +38,17 @@ The following are the configuration parameters available for the Trimble GNSS Dr
 - **`permit_high_covariance_data`**
   - **Description**: Publish fixes even when position covariance exceeds `covariance_threshold`.
   - **Default**: `True`
+
+- **`use_gnss_time`**
+  - **Description**: Stamp `/fix` with the receiver's measurement epoch (GSOF record 1, *Position Time*) and `/yaw` with the attitude record's own time, instead of the arrival time. Enable record 1 on the receiver's GSOF port and keep the host clock synchronised to UTC (e.g. chrony). Messages without an epoch, or whose epoch differs from the host clock by more than `max_gnss_time_offset`, are stamped with the arrival time and a warning is logged. The driver logs the arrival − epoch latency every 600 messages.
+  - **Default**: `True`
+
+- **`gps_leap_seconds`**
+  - **Description**: GPS − UTC leap seconds used to convert GPS time to UTC.
+  - **Default**: `18`
+
+- **`max_gnss_time_offset`**
+  - **Description**: Largest accepted |host clock − GNSS epoch| in seconds before falling back to the arrival time.
+  - **Default**: `0.5`
+
+The driver reconnects when the receiver closes the GSOF stream (for example after its port configuration changes), and records longer than their parse map (optional trailing fields) are parsed by their known prefix instead of stopping the driver.
