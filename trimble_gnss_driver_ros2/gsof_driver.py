@@ -7,7 +7,7 @@ It  has been adapted from https://kb.unavco.org/kb/article/trimble-netr9-receive
 @auther: Geesara (ggeesara@gmail.com)
 """
 
-from struct import unpack
+from struct import calcsize, unpack
 import rclpy.duration
 import rclpy.time
 from trimble_gnss_driver_ros2.scripts.parser import parse_maps
@@ -46,6 +46,8 @@ INS_FULL_NAV = 49          # INS fused full nav info pose, attittude etc
 INS_RMS = 50               # RMS errors from reported fused position
 RECEIVED_BASE_INFO = 35    # Received base information
 
+POSITION_TIME = 1          # GPS time of the position epoch
+
 # Others (but still not the entire list of GSOF msgs available.)
 VELOCITY = 8
 SERIAL_NUM = 15
@@ -54,6 +56,23 @@ UTC_TIME = 16
 ECEF_POS = 3
 LOCAL_DATUM = 4
 LOCAL_ENU= 5
+
+
+GPS_EPOCH_UNIX = 315964800      # 1980-01-06T00:00:00Z
+SECONDS_PER_WEEK = 604800
+
+
+def gps_to_unix(tow_ms, now_unix, leap_seconds, week=None):
+    """UTC (Unix) time of a GPS epoch given its time of week.
+
+    Without a week number the week nearest the host clock is used, which is
+    unambiguous as long as the host clock is within half a week of UTC.
+    """
+    t = GPS_EPOCH_UNIX + tow_ms / 1000.0 - leap_seconds
+    if week is not None:
+        return t + week * SECONDS_PER_WEEK
+    k = round((now_unix - t) / SECONDS_PER_WEEK)
+    return t + k * SECONDS_PER_WEEK
 
 
 class GSOFDriver(Node):
@@ -70,6 +89,13 @@ class GSOFDriver(Node):
         self.declare_parameter('heading_offset'             , rclpy.Parameter.Type.DOUBLE) 
         self.declare_parameter('covariance_threshold'       , rclpy.Parameter.Type.DOUBLE) 
         self.declare_parameter('permit_high_covariance_data', rclpy.Parameter.Type.BOOL) 
+        # Stamp messages with the receiver's measurement epoch (GSOF record 1
+        # for position, the attitude record's own time for heading) instead of
+        # the arrival time; needs the host clock synchronised to UTC.
+        self.declare_parameter('use_gnss_time', True)
+        self.declare_parameter('gps_leap_seconds', 18)
+        # Fall back to the arrival time if epoch and host clock disagree by more.
+        self.declare_parameter('max_gnss_time_offset', 0.5)
 
         self.rtk_port = self.get_parameter_or("rtk_port", Parameter('int', Parameter.Type.INTEGER, 21098)).value
         self.rtk_ip = self.get_parameter_or("rtk_ip", Parameter('str', Parameter.Type.STRING, "192.168.0.50")).value 
@@ -79,6 +105,14 @@ class GSOFDriver(Node):
         self.covariance_threshold = self.get_parameter_or("covariance_threshold", Parameter('double', Parameter.Type.DOUBLE, 0.2 )).value
         self.permit_high_covariance_data = self.get_parameter_or("permit_high_covariance_data", Parameter('bool', Parameter.Type.BOOL, True )).value
         
+        self.use_gnss_time = self.get_parameter('use_gnss_time').value
+        self.gps_leap_seconds = self.get_parameter('gps_leap_seconds').value
+        self.max_gnss_time_offset = self.get_parameter('max_gnss_time_offset').value
+        self.pos_tow_ms = None
+        self.pos_week = None
+        self.att_tow_ms = None
+        self.epoch_latency = []
+
         if self.apply_dual_antenna_offset == False:
             self.heading_offset = 0
 
@@ -226,7 +260,7 @@ class GSOFDriver(Node):
             self.get_logger().warn("Invalid yaw, skipping")
             return
 
-        current_time = self.get_clock().now() # Replace with GPS time?
+        current_time = self.stamp_for(self.att_tow_ms if ATTITUDE in self.records else None)
 
         # print "current time: ", current_time, "INS time: ", self.ins_rms_ts
         attitude = Imu()
@@ -254,7 +288,7 @@ class GSOFDriver(Node):
             self.get_logger().warn("Invalid fix, skipping")
             return
 
-        current_time = self.get_clock().now() # Replace with GPS time?
+        current_time = self.stamp_for(self.pos_tow_ms if POSITION_TIME in self.records else None, self.pos_week)
         fix = NavSatFix()
 
         fix.header.stamp = current_time.to_msg()
@@ -347,6 +381,27 @@ class GSOFDriver(Node):
         self.yaw_pub.publish(yaw)
 
 
+    def stamp_for(self, tow_ms, week=None):
+        """Measurement-epoch stamp if available and plausible, else the arrival time."""
+        now = self.get_clock().now()
+        if not self.use_gnss_time or tow_ms is None:
+            return now
+        now_s = now.nanoseconds * 1e-9
+        t = gps_to_unix(tow_ms, now_s, self.gps_leap_seconds, week)
+        lag = now_s - t
+        if abs(lag) > self.max_gnss_time_offset:
+            self.get_logger().warn(
+                "GNSS epoch and host clock differ by {:.3f} s; stamping with arrival time "
+                "(is the host clock synchronised?)".format(lag), throttle_duration_sec=10)
+            return now
+        self.epoch_latency.append(lag)
+        if len(self.epoch_latency) >= 600:
+            lat = sorted(self.epoch_latency)
+            self.get_logger().info("GNSS arrival - epoch latency: median {:.1f} ms, p95 {:.1f} ms".format(
+                1000 * lat[len(lat) // 2], 1000 * lat[int(0.95 * len(lat))]))
+            self.epoch_latency = []
+        return rclpy.time.Time(nanoseconds=int(round(t * 1e9)), clock_type=now.clock_type)
+
     def get_gps_quality(self):
         """Get ROS NavSatStatus position type from trimbles
         """
@@ -417,6 +472,17 @@ class GSOFDriver(Node):
             except socket.timeout as timeout:
                 self.get_logger().warn("Socket timed out during read: {}".format(timeout))
                 continue
+            except OSError as e:
+                new_bytes = b''
+                self.get_logger().warn("Socket error: {}".format(e))
+            if not new_bytes:
+                # The receiver closed the stream (e.g. its port configuration
+                # changed): reconnect instead of spinning on an empty socket.
+                self.get_logger().warn("GSOF stream closed by the receiver, reconnecting")
+                self.client.close()
+                self.client = self.setup_connection(self.rtk_ip or self.get_parameter('rtk_ip').value, self.rtk_port)
+                num_read_bytes, read_bytes = 0, b''
+                continue
             read_bytes += new_bytes
             num_read_bytes += len(new_bytes)
         return read_bytes
@@ -455,7 +521,19 @@ class GSOFDriver(Node):
             # print "Record type: ", record_type, " Length: ", record_length
             # self.select_record(record_type, record_length)
             if record_type in parse_maps:
-                self.rec_dict.update(dict(zip(parse_maps[record_type][0], unpack(parse_maps[record_type][1], self.msg_bytes[self.byte_position:self.byte_position + record_length]))))
+                names, fmt = parse_maps[record_type]
+                size = calcsize(fmt)
+                if record_length >= size:
+                    # records may carry optional trailing fields (e.g. velocity local heading)
+                    values = unpack(fmt, self.msg_bytes[self.byte_position:self.byte_position + size])
+                    self.rec_dict.update(dict(zip(names, values)))
+                    if record_type == POSITION_TIME:
+                        self.pos_tow_ms, self.pos_week = values[0], values[1]
+                    elif record_type == ATTITUDE:
+                        self.att_tow_ms = values[0]
+                else:
+                    self.get_logger().warn("Record type {} has {} bytes, expected {}; skipped".format(
+                        record_type, record_length, size), throttle_duration_sec=10)
             else:
                 self.get_logger().warn("Record type {} is not in parse maps.".format(record_type))
             self.byte_position += record_length
